@@ -32,8 +32,8 @@ export function AuthProvider({ children }) {
     return () => window.removeEventListener('shorts:logout', onLogout);
   }, [loadUser]);
 
-  const login = async (email, password) => {
-    await api.login(email, password);
+  const login = async (email, password, remember = true) => {
+    await api.login(email, password, remember);
     return loadUser();
   };
 

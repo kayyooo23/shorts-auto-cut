@@ -8,6 +8,7 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [remember, setRemember] = useState(true);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -16,7 +17,7 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
     try {
-      const loggedInUser = await login(email, password);
+      const loggedInUser = await login(email, password, remember);
       navigate(loggedInUser?.is_admin ? '/admin' : '/videos');
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : 'Не удалось войти');
@@ -45,6 +46,14 @@ export default function LoginPage() {
           type="password" required value={password} placeholder="••••••••"
           onChange={(e) => setPassword(e.target.value)}
         />
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 16, fontSize: 13, color: 'var(--text-soft)', cursor: 'pointer' }}>
+          <input
+            type="checkbox" checked={remember}
+            onChange={(e) => setRemember(e.target.checked)}
+          />
+          Запомнить меня
+        </label>
 
         {error && <div className="form-error">{error}</div>}
 

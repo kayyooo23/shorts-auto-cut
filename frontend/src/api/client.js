@@ -1,8 +1,27 @@
 const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+const STORAGE_KEY = 'shorts_tokens';
+
+/**
+ * Токены живут ровно в одном хранилище за раз:
+ * localStorage — если пользователь отметил "Запомнить меня" (переживает
+ * закрытие браузера), sessionStorage — если снял галочку (разлогинивает
+ * при закрытии вкладки/браузера). Проверяем localStorage первым, иначе
+ * рассинхрон между вкладками с разным выбором был бы недетерминирован.
+ */
+function getActiveStorage() {
+  if (localStorage.getItem(STORAGE_KEY)) return localStorage;
+  if (sessionStorage.getItem(STORAGE_KEY)) return sessionStorage;
+  return null;
+}
 
 function getTokens() {
-  const raw = localStorage.getItem('shorts_tokens');
-  return raw ? JSON.parse(raw) : null;
+  const storage = getActiveStorage();
+  if (!storage) return null;
+  try {
+    return JSON.parse(storage.getItem(STORAGE_KEY));
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -16,11 +35,21 @@ function mediaUrl(path) {
   return `${BASE_URL}${path}?token=${encodeURIComponent(token)}`;
 }
 
-function setTokens(tokens) {
+/**
+ * persist=true -> localStorage ("Запомнить меня", по умолчанию).
+ * persist=false -> sessionStorage (выход при закрытии вкладки/браузера).
+ * В обоих случаях чистит ВТОРОЕ хранилище — иначе при повторном логине с
+ * другим значением галочки токены остались бы дублироваться в обоих
+ * местах, и getTokens() мог бы найти устаревшую версию не в том хранилище.
+ */
+function setTokens(tokens, persist = true) {
+  const target = persist ? localStorage : sessionStorage;
+  const other = persist ? sessionStorage : localStorage;
+  other.removeItem(STORAGE_KEY);
   if (tokens) {
-    localStorage.setItem('shorts_tokens', JSON.stringify(tokens));
+    target.setItem(STORAGE_KEY, JSON.stringify(tokens));
   } else {
-    localStorage.removeItem('shorts_tokens');
+    target.removeItem(STORAGE_KEY);
   }
 }
 
@@ -35,7 +64,12 @@ class ApiError extends Error {
 let refreshPromise = null;
 
 async function refreshAccessToken() {
-  const tokens = getTokens();
+  // Пишем обновлённый access_token обратно в ТО ЖЕ хранилище, откуда взяли
+  // refresh_token (напрямую, в обход setTokens()) — иначе продление сессии
+  // в sessionStorage случайно перекладывало бы токены в localStorage
+  // (или наоборот) при каждом обновлении access-токена.
+  const storage = getActiveStorage();
+  const tokens = storage ? JSON.parse(storage.getItem(STORAGE_KEY)) : null;
   if (!tokens?.refresh_token) throw new ApiError(401, 'Не авторизован');
 
   // Не даём нескольким параллельным 401 запустить рефреш одновременно —
@@ -49,7 +83,7 @@ async function refreshAccessToken() {
       .then(async (res) => {
         if (!res.ok) throw new ApiError(res.status, 'Сессия истекла');
         const data = await res.json();
-        setTokens({ ...tokens, access_token: data.access_token });
+        storage.setItem(STORAGE_KEY, JSON.stringify({ ...tokens, access_token: data.access_token }));
         return data.access_token;
       })
       .finally(() => {
@@ -105,9 +139,9 @@ export const api = {
   async register(email, password) {
     return request('/auth/register', { method: 'POST', body: { email, password }, auth: false });
   },
-  async login(email, password) {
+  async login(email, password, remember = true) {
     const data = await request('/auth/login', { method: 'POST', body: { email, password }, auth: false });
-    setTokens(data);
+    setTokens(data, remember);
     return data;
   },
   async logout() {
