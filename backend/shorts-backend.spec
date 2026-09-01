@@ -1,16 +1,22 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.utils.hooks import collect_submodules, collect_data_files
 
 hiddenimports = []
 hiddenimports += collect_submodules('celery')
 hiddenimports += collect_submodules('kombu')
 
+# faster_whisper бандлит silero_vad.onnx (VAD-модель, используется всегда,
+# vad_filter=True в pipeline/transcribe.py) как package data — PyInstaller
+# не подхватывает его сам, без этого transcribe() падает с
+# "ONNXRuntimeError: NO_SUCHFILE" при первом же вызове в собранном .exe.
+datas = collect_data_files('faster_whisper')
+datas += [('alembic', 'alembic'), ('alembic.ini', '.')]
 
 a = Analysis(
     ['desktop_main.py'],
     pathex=[],
     binaries=[],
-    datas=[('alembic', 'alembic'), ('alembic.ini', '.')],
+    datas=datas,
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
