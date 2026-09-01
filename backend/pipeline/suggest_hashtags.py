@@ -10,7 +10,8 @@ import re
 
 import anthropic
 
-from app.config import ANTHROPIC_API_KEY, CLAUDE_MODEL
+from app.config import CLAUDE_MODEL, get_anthropic_api_key
+from pipeline.find_moments import MissingApiKeyError
 
 SYSTEM_PROMPT = """\
 Ты подбираешь хештеги для короткого вертикального видео (TikTok/YouTube \
@@ -35,7 +36,12 @@ def suggest_hashtags(text: str, count: int = 10, model: str | None = None) -> li
     text — содержимое момента (субтитры + краткое описание), по которому
     подбираются теги. Возвращает список строк вида "#тег".
     """
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    api_key = get_anthropic_api_key()
+    if not api_key:
+        raise MissingApiKeyError(
+            "Anthropic API ключ не задан — укажи его в Настройках, чтобы подбирать хештеги."
+        )
+    client = anthropic.Anthropic(api_key=api_key)
     model = model or CLAUDE_MODEL
 
     user_prompt = f"Содержимое видео:\n\n{text}\n\nПредложи {count} хештегов."

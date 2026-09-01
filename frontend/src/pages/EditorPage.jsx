@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { api, ApiError } from '../api/client';
 import PublishModal from '../components/PublishModal';
 import { MomentBlock, ClipBlock } from '../components/TimelineBlocks';
@@ -39,6 +39,8 @@ export default function EditorPage() {
   const [uploadingAsset, setUploadingAsset] = useState(null); // 'banner' | trackId | null
   const [selectedClipId, setSelectedClipId] = useState(null);
 
+  const [whisperDownloading, setWhisperDownloading] = useState(false);
+
   const load = useCallback(async () => {
     const data = await api.getVideo(videoId);
     setVideo(data);
@@ -46,6 +48,27 @@ export default function EditorPage() {
   }, [videoId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Пока видео транскрибируется/ищутся моменты — поллим статус, чтобы
+  // редактор сам обновился, когда обработка закончится (без ручного F5).
+  // Отдельно поллим /system/whisper-status: первая транскрипция может
+  // скачивать модель распознавания речи несколько минут — без этого
+  // индикатора это выглядит как зависший процесс без объяснений.
+  useEffect(() => {
+    if (!video || ['ready', 'failed'].includes(video.status)) return;
+    const interval = setInterval(async () => {
+      load().catch(() => {});
+      if (video.status === 'transcribing') {
+        try {
+          const s = await api.getWhisperStatus();
+          setWhisperDownloading(s.downloading);
+        } catch {
+          /* не критично — просто не покажем индикатор */
+        }
+      }
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [video, load]);
   useEffect(() => { setSelectedClipId(null); }, [selectedMomentId]);
 
   // При переключении на другой момент того же видео перематываем плеер
@@ -325,6 +348,43 @@ export default function EditorPage() {
   }
 
   if (!video) return <p style={{ color: 'var(--text-soft)' }}>Загружаем…</p>;
+
+  if (video.status === 'failed') {
+    const isMissingKey = (video.error_message || '').includes('API ключ не задан');
+    return (
+      <div className="empty-state">
+        <p style={{ color: 'var(--danger)' }}>Не удалось обработать видео.</p>
+        <p style={{ color: 'var(--text-faint)', fontSize: 13, maxWidth: 480, whiteSpace: 'pre-wrap' }}>
+          {isMissingKey
+            ? 'Не задан Anthropic API ключ — без него поиск моментов не работает.'
+            : (video.error_message || '').split('\n')[0]}
+        </p>
+        {isMissingKey && (
+          <Link to="/settings" className="btn btn-primary" style={{ marginTop: 12 }}>Указать ключ в Настройках</Link>
+        )}
+      </div>
+    );
+  }
+
+  if (video.status !== 'ready') {
+    const PROCESSING_LABELS = {
+      uploaded: 'В очереди на обработку…',
+      transcribing: 'Распознаём речь…',
+      finding_moments: 'Ищем яркие моменты…',
+    };
+    return (
+      <div className="empty-state">
+        <p>{PROCESSING_LABELS[video.status] || 'Обрабатываем видео…'}</p>
+        {whisperDownloading && (
+          <p style={{ color: 'var(--text-faint)', fontSize: 13, maxWidth: 480 }}>
+            Скачивается модель распознавания речи — в первый раз это может занять
+            несколько минут в зависимости от скорости интернета. Дальше будет быстрее,
+            модель скачивается один раз.
+          </p>
+        )}
+      </div>
+    );
+  }
 
   const duration = video.duration_seconds || 1;
 

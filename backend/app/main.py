@@ -1213,6 +1213,45 @@ if ENVIRONMENT != "production":
         return billing_me(db, current_user)
 
 
+# ---------- Настройки desktop-версии ----------
+# Только для RUNNER_MODE=local: в облачном режиме ANTHROPIC_API_KEY задаётся
+# через переменную окружения при деплое, экран настроек ему не нужен и
+# сохранение в локальный файл всё равно не подхватилось бы (см.
+# app/config.py::get_anthropic_api_key).
+
+@app.get("/settings/anthropic-key")
+def get_anthropic_key_status(current_user: User = Depends(get_current_user)):
+    """Не возвращает сам ключ — только флаг, задан ли он, чтобы фронтенд
+    показал "ключ сохранён" вместо пустого поля (и не выводил секрет обратно
+    на экран)."""
+    if RUNNER_MODE != "local":
+        raise HTTPException(404, "Доступно только в desktop-режиме")
+    from app.config import get_anthropic_api_key
+    return {"is_set": bool(get_anthropic_api_key())}
+
+
+@app.put("/settings/anthropic-key")
+def set_anthropic_key(payload: dict, current_user: User = Depends(get_current_user)):
+    if RUNNER_MODE != "local":
+        raise HTTPException(404, "Доступно только в desktop-режиме")
+    api_key = (payload.get("api_key") or "").strip()
+    if not api_key:
+        raise HTTPException(400, "Ключ не может быть пустым")
+    from app import local_config
+    local_config.set_anthropic_api_key(api_key)
+    return {"is_set": True}
+
+
+@app.get("/system/whisper-status")
+def whisper_status(current_user: User = Depends(get_current_user)):
+    """Пока faster-whisper качает модель распознавания речи при первом
+    использовании (модель НЕ вшита в инсталлятор), фронтенд поллит этот
+    эндпоинт, чтобы показать "скачивается модель" вместо зависшего спиннера
+    транскрипции без объяснений."""
+    from pipeline.transcribe import get_whisper_download_state
+    return get_whisper_download_state()
+
+
 @app.get("/health")
 def health():
     return {"status": "ok"}

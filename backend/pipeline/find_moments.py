@@ -8,7 +8,14 @@ import re
 
 import anthropic
 
-from app.config import ANTHROPIC_API_KEY, CLAUDE_MODEL
+from app.config import CLAUDE_MODEL, get_anthropic_api_key
+
+
+class MissingApiKeyError(Exception):
+    """Anthropic API ключ не задан — поиск моментов недоступен, пока
+    пользователь не впишет его на экране настроек (desktop-режим) или
+    не задаст ANTHROPIC_API_KEY (облачный режим)."""
+    pass
 
 SYSTEM_PROMPT = """\
 Ты — опытный монтажёр коротких видео (shorts/reels/tiktok). Тебе дают транскрипт \
@@ -39,7 +46,12 @@ def _format_transcript(transcript: list[dict]) -> str:
 
 
 def find_moments(transcript: list[dict], count: int = 6, model: str = None) -> list[dict]:
-    client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+    api_key = get_anthropic_api_key()
+    if not api_key:
+        raise MissingApiKeyError(
+            "Anthropic API ключ не задан — укажи его в Настройках, чтобы искать моменты."
+        )
+    client = anthropic.Anthropic(api_key=api_key)
     model = model or CLAUDE_MODEL
 
     user_prompt = (

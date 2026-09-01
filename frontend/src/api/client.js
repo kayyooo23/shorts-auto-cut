@@ -283,6 +283,17 @@ export const api = {
     return request(`/projects/${id}`, { method: 'DELETE' });
   },
 
+  // ---------- Настройки desktop-версии ----------
+  async getAnthropicKeyStatus() {
+    return request('/settings/anthropic-key');
+  },
+  async setAnthropicKey(apiKey) {
+    return request('/settings/anthropic-key', { method: 'PUT', body: { api_key: apiKey } });
+  },
+  async getWhisperStatus() {
+    return request('/system/whisper-status');
+  },
+
   // ---------- Медиа (для живого предпросмотра в редакторе) ----------
   getVideoFileUrl(videoId) {
     return mediaUrl(`/videos/${videoId}/file`);

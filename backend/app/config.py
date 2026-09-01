@@ -55,6 +55,20 @@ CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:63
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY") or (_get_anthropic_api_key() if RUNNER_MODE == "local" else "") or ""
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
 
+
+def get_anthropic_api_key() -> str:
+    """
+    В отличие от константы ANTHROPIC_API_KEY выше (читается один раз при
+    старте процесса), эта функция в desktop-режиме перечитывает ключ из
+    локального конфига при КАЖДОМ вызове — пользователь может вписать или
+    поменять ключ на экране настроек в любой момент работы приложения, без
+    перезапуска. pipeline/find_moments.py и pipeline/suggest_hashtags.py
+    должны вызывать её, а не использовать константу напрямую.
+    """
+    if RUNNER_MODE == "local":
+        return os.getenv("ANTHROPIC_API_KEY") or _get_anthropic_api_key() or ""
+    return ANTHROPIC_API_KEY
+
 # Whisper
 WHISPER_MODEL_SIZE = os.getenv("WHISPER_MODEL_SIZE", "medium")
 WHISPER_DEVICE = os.getenv("WHISPER_DEVICE", "cpu")  # "cuda" если есть GPU
