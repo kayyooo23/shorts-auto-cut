@@ -163,6 +163,19 @@ def _render_moment_core(moment_id: str) -> None:
             for track in moment.tracks
         ]
 
+        if moment.audio_path:
+            tracks_payload.append({
+                "type": "audio",
+                "clips": [{
+                    "file_path": moment.audio_path,
+                    "trim_start": moment.audio_trim_start or 0.0,
+                    "trim_end": moment.audio_trim_end,
+                    "position_start": 0.0,
+                    "position_end": (moment.audio_trim_end or 0.0) - (moment.audio_trim_start or 0.0),
+                    "volume": moment.audio_volume,
+                }],
+            })
+
         render_moment(
             source_video_path=video.filepath,
             start=moment.start,

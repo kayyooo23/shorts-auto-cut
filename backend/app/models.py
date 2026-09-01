@@ -125,6 +125,12 @@ class Moment(Base):
     banner_path = Column(String, nullable=True)
     banner_position = Column(String, default="bottom-right")  # top-left/top-right/bottom-left/bottom-right
 
+    audio_path = Column(String, nullable=True)
+    audio_duration = Column(Float, nullable=True)  # длительность исходного файла, секунды
+    audio_trim_start = Column(Float, nullable=True)
+    audio_trim_end = Column(Float, nullable=True)
+    audio_volume = Column(Float, default=1.0, nullable=False)
+
     # Дополнительные видео/аудио дорожки — см. модели Track/Clip ниже
 
     status = Column(Enum(MomentStatus), default=MomentStatus.PENDING, nullable=False)

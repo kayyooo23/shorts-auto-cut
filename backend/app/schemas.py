@@ -157,6 +157,11 @@ class MomentOut(BaseModel):
     status: str
     banner_path: str | None
     banner_position: str
+    audio_path: str | None
+    audio_duration: float | None
+    audio_trim_start: float | None
+    audio_trim_end: float | None
+    audio_volume: float
     output_path: str | None
     subtitles: list[SubtitleOut] = []
     tracks: list[TrackOut] = []
@@ -168,6 +173,9 @@ class MomentUpdate(BaseModel):
     end: float | None = None
     status: str | None = None
     banner_position: str | None = None
+    audio_trim_start: float | None = None
+    audio_trim_end: float | None = None
+    audio_volume: float | None = None
 
 
 class VideoOut(BaseModel):

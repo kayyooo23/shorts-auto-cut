@@ -706,6 +706,50 @@ def delete_banner(moment_id: str, db: Session = Depends(get_db), current_user: U
     return moment
 
 
+@app.post("/moments/{moment_id}/audio", response_model=MomentOut)
+def upload_audio_overlay(
+    moment_id: str, file: UploadFile = File(...),
+    db: Session = Depends(get_db), current_user: User = Depends(get_current_user),
+):
+    moment = _get_owned_moment(moment_id, db, current_user)
+
+    ext = Path(file.filename).suffix.lower()
+    if ext not in AUDIO_ALLOWED_EXTENSIONS:
+        raise HTTPException(400, f"Неподдерживаемый формат аудио: {ext}")
+
+    if moment.audio_path:
+        Path(moment.audio_path).unlink(missing_ok=True)  # чистим предыдущий оверлей при замене
+
+    dest_path = UPLOADS_DIR / f"{moment.id}_audio{ext}"
+    with dest_path.open("wb") as f:
+        shutil.copyfileobj(file.file, f)
+
+    audio_duration = billing.get_video_duration_seconds(str(dest_path))
+    moment_duration = moment.end - moment.start
+
+    moment.audio_path = str(dest_path)
+    moment.audio_duration = audio_duration
+    moment.audio_trim_start = 0.0
+    moment.audio_trim_end = min(audio_duration, moment_duration)
+    db.commit()
+    db.refresh(moment)
+    return moment
+
+
+@app.delete("/moments/{moment_id}/audio", response_model=MomentOut)
+def delete_audio_overlay(moment_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    moment = _get_owned_moment(moment_id, db, current_user)
+    if moment.audio_path:
+        Path(moment.audio_path).unlink(missing_ok=True)
+        moment.audio_path = None
+        moment.audio_duration = None
+        moment.audio_trim_start = None
+        moment.audio_trim_end = None
+        db.commit()
+        db.refresh(moment)
+    return moment
+
+
 @app.post("/moments/{moment_id}/tracks", response_model=TrackOut, status_code=201)
 def create_track(
     moment_id: str, data: TrackCreate,
