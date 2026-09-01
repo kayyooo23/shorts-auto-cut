@@ -385,8 +385,24 @@ def upload_video(
     db.refresh(video)
     db.refresh(current_user)
 
-    # запускаем обработку в фоне через Celery — запрос не блокируется
-    dispatch(process_video, video.id)
+    # Запускаем обработку в фоне (Celery в облачном режиме, локальный
+    # пул потоков в desktop). dispatch() сам по себе может упасть СИНХРОННО
+    # прямо здесь — например, если RUNNER_MODE каким-то образом не долетел
+    # до "local" в desktop-сборке и код пытается достучаться до
+    # несуществующего Celery-брокера, или задача не зарегистрирована для
+    # локального режима. Video-запись уже закоммичена выше — без этого
+    # try/except такая ошибка ушла бы наверх как 500 и оставила бы видео
+    # висеть в статусе "uploaded" НАВСЕГДА (единственное место, где
+    # ошибка могла произойти ДО входа в try/except внутри самой задачи —
+    # см. app/tasks.py::_process_video_core, который сам ловит всё
+    # остальное и всегда переводит в FAILED).
+    try:
+        dispatch(process_video, video.id)
+    except Exception as e:
+        video.status = VideoStatus.FAILED
+        video.error_message = f"Не удалось поставить видео в очередь на обработку: {e}"
+        db.commit()
+        db.refresh(video)
 
     used_today = billing.count_cuts_today(db, current_user)
     limit = billing.daily_cut_limit(current_user)

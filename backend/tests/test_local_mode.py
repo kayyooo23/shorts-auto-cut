@@ -150,3 +150,36 @@ def test_publish_target_runs_locally(local_mode, register_and_login, monkeypatch
         return result
 
     assert _wait_until(_published, timeout=15), "Публикация не завершилась в локальном режиме"
+
+
+def test_upload_marks_video_failed_if_dispatch_raises_synchronously(client, register_and_login, source_video, monkeypatch):
+    """
+    Баг из продакшена: если dispatch() падает СИНХРОННО прямо в обработчике
+    /videos/upload (например, RUNNER_MODE каким-то образом не долетел до
+    "local" в desktop-сборке и код пытается достучаться до
+    несуществующего Celery-брокера, или задача не зарегистрирована для
+    локального режима) — видео уже создано в БД (committed) ДО вызова
+    dispatch(), и без обработки такой ошибки статус остаётся "uploaded"
+    НАВСЕГДА: пользователь видит бесконечное "В очереди на обработку" без
+    единого намёка на ошибку. Эндпоинт должен ловить это и переводить
+    видео в failed с понятным error_message, а не ронять запрос как 500
+    и терять единственную ссылку на созданную запись.
+    """
+    import app.main as main_module
+
+    def _boom(task, *args):
+        raise RuntimeError("Нет локальной реализации для задачи — тестовая имитация сбоя dispatch")
+
+    monkeypatch.setattr(main_module, "dispatch", _boom)
+
+    headers, _tokens, _email = register_and_login()
+    with open(source_video, "rb") as f:
+        r = client.post("/videos/upload", files={"file": ("e.mp4", f, "video/mp4")}, headers=headers)
+
+    assert r.status_code == 200  # не 500 — ответ есть, видео не потеряно
+    body = r.json()["video"]
+    assert body["status"] == "failed"
+    assert "очередь" in body["error_message"].lower()
+
+    r2 = client.get(f"/videos/{body['id']}", headers=headers)
+    assert r2.json()["status"] == "failed"
