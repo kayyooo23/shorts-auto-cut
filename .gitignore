@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+venv/
+.venv/
+*.db
+backend/.env
+
+# storage — keep folders, ignore contents
+backend/storage/uploads/*
+backend/storage/outputs/*
+!backend/storage/uploads/.gitkeep
+!backend/storage/outputs/.gitkeep
+
+# Node
+node_modules/
+dist/
+.env.local
+
+# Общее
+.DS_Store
+*.log
