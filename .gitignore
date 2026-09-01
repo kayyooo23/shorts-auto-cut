@@ -8,6 +8,13 @@ backend/.env
 
 # PyInstaller (сборка desktop .exe — см. backend/shorts-backend.spec)
 backend/build/
+backend/dist/
+
+# ffmpeg/ffprobe бинарники (~100МБ каждый) — скачиваются отдельно, см.
+# backend/scripts/download_ffmpeg.ps1, кладутся сюда же для локальной
+# разработки без системного ffmpeg и как ресурсы для сборки .exe/Tauri.
+backend/ffmpeg.exe
+backend/ffprobe.exe
 
 # storage — keep folders, ignore contents
 backend/storage/uploads/*

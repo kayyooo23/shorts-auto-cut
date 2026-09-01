@@ -4,6 +4,7 @@
 """
 
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -63,6 +64,37 @@ UPLOADS_DIR = DATA_DIR / "storage" / "uploads"
 OUTPUTS_DIR = DATA_DIR / "storage" / "outputs"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def _resolve_binary(env_var: str, filename: str) -> str:
+    """
+    Ищет ffmpeg/ffprobe в таком порядке:
+    1. явный путь в переменной окружения (FFMPEG_PATH/FFPROBE_PATH);
+    2. рядом с .exe (EXTERNAL_RESOURCE_DIR — в desktop-сборке туда Tauri
+       кладёт ffmpeg.exe/ffprobe.exe; при запуске из исходников это
+       backend/ffmpeg.exe — положи бинарник туда для локальной разработки
+       без системного ffmpeg);
+    3. фолбэк на системный PATH — чтобы локальная разработка без бинарников
+       рядом не ломалась, если ffmpeg уже стоит в системе.
+    Если не найден нигде — возвращается голое имя: subprocess сам поднимет
+    понятную ошибку "файл не найден" в момент вызова.
+    """
+    override = os.getenv(env_var)
+    if override:
+        return override
+    candidate = EXTERNAL_RESOURCE_DIR / filename
+    if candidate.exists():
+        return str(candidate)
+    found = shutil.which(filename)
+    if found:
+        return found
+    return filename
+
+
+_FFMPEG_NAME = "ffmpeg.exe" if os.name == "nt" else "ffmpeg"
+_FFPROBE_NAME = "ffprobe.exe" if os.name == "nt" else "ffprobe"
+FFMPEG_PATH = _resolve_binary("FFMPEG_PATH", _FFMPEG_NAME)
+FFPROBE_PATH = _resolve_binary("FFPROBE_PATH", _FFPROBE_NAME)
 
 # Сколько моментов искать по умолчанию на один эпизод
 DEFAULT_MOMENTS_COUNT = int(os.getenv("DEFAULT_MOMENTS_COUNT", "6"))

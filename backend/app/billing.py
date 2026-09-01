@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.config import (
     MAX_VIDEO_DURATION_SECONDS, DAILY_CUT_LIMITS, ACCOUNT_LIMITS_PER_PLATFORM,
     EXTRA_CUT_COST_COINS, EXTRA_ACCOUNT_SLOT_COST_COINS, DAILY_UNIQUEIZE_LIMITS,
+    FFPROBE_PATH,
 )
 from app.models import (
     User, Video, SocialAccount, AccountSlotPurchase, CoinTransaction,
@@ -34,7 +35,7 @@ def get_video_duration_seconds(filepath: str) -> float:
     try:
         result = subprocess.run(
             [
-                "ffprobe", "-v", "error",
+                FFPROBE_PATH, "-v", "error",
                 "-show_entries", "format=duration",
                 "-of", "default=noprint_wrappers=1:nokey=1",
                 filepath,

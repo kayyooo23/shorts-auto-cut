@@ -10,9 +10,22 @@
 import subprocess
 from pathlib import Path
 
+from app.config import FFMPEG_PATH, FFPROBE_PATH
+
 
 class RenderError(Exception):
     pass
+
+
+def _ffmpeg_filter_path(path: str) -> str:
+    """
+    Экранирует путь для подстановки внутрь значения фильтра ffmpeg
+    (subtitles=...) — там ':' и '\\' значимы для парсера filtergraph, что
+    на Windows ломает пути вида "C:\\Users\\...\\out.srt" (буква диска с
+    двоеточием + обратные слэши): ffmpeg считает всё после первого ':'
+    отдельной опцией фильтра вместо части пути.
+    """
+    return str(path).replace("\\", "/").replace(":", "\\:")
 
 
 def _format_srt_timestamp(seconds: float) -> str:
@@ -49,7 +62,7 @@ _BANNER_POSITION_EXPR = {
 
 def _has_audio_stream(path: str) -> bool:
     result = subprocess.run(
-        ["ffprobe", "-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of", "csv=p=0", path],
+        [FFPROBE_PATH, "-v", "error", "-select_streams", "a", "-show_entries", "stream=index", "-of", "csv=p=0", path],
         capture_output=True, text=True, timeout=30,
     )
     return bool(result.stdout.strip())
@@ -100,10 +113,10 @@ def render_moment(
         with open(srt_path, "w", encoding="utf-8") as f:
             f.write(subtitles_to_srt(subtitles))
         video_chain.append(
-            f"subtitles='{srt_path}':force_style='FontSize=18,PrimaryColour=&HFFFFFF,BorderStyle=3,Outline=2'"
+            f"subtitles='{_ffmpeg_filter_path(srt_path)}':force_style='FontSize=18,PrimaryColour=&HFFFFFF,BorderStyle=3,Outline=2'"
         )
 
-    cmd = ["ffmpeg", "-y", "-ss", str(start), "-to", str(end), "-i", source_video_path]
+    cmd = [FFMPEG_PATH, "-y", "-ss", str(start), "-to", str(end), "-i", source_video_path]
     next_input_idx = 1
 
     filter_parts = [f"[0:v]{','.join(video_chain)}[vbase]"]

@@ -11,7 +11,7 @@ import hashlib
 import subprocess
 from pathlib import Path
 
-from app.config import OUTPUTS_DIR
+from app.config import OUTPUTS_DIR, FFMPEG_PATH
 
 
 class ThumbnailError(Exception):
@@ -26,7 +26,7 @@ def get_or_create_thumbnail(source_path: str, time_seconds: float) -> str:
         return str(thumb_path)
 
     result = subprocess.run(
-        ["ffmpeg", "-y", "-ss", str(max(time_seconds, 0)), "-i", source_path,
+        [FFMPEG_PATH, "-y", "-ss", str(max(time_seconds, 0)), "-i", source_path,
          "-frames:v", "1", "-q:v", "3", str(thumb_path)],
         capture_output=True, text=True, timeout=30,
     )

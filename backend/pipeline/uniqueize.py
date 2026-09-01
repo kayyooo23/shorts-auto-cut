@@ -23,6 +23,8 @@ import random
 import subprocess
 from pathlib import Path
 
+from app.config import FFMPEG_PATH
+
 
 class UniqueizeError(Exception):
     pass
@@ -86,7 +88,7 @@ def apply_uniqueization(
     if abs(params["speed"] - 1.0) > 0.001:
         video_filters.append(f"setpts=PTS/{params['speed']}")
 
-    cmd = ["ffmpeg", "-y", "-i", input_path]
+    cmd = [FFMPEG_PATH, "-y", "-i", input_path]
 
     audio_filters = []
     if abs(params["speed"] - 1.0) > 0.001:
