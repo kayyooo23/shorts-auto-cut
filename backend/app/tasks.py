@@ -1,6 +1,13 @@
 """
 Фоновые задачи:
-  process_video               — транскрибировать видео → найти моменты → сохранить в БД.
+  process_video               — транскрибировать видео, сохранить транскрипт.
+                                 Поиск моментов сюда НЕ входит — это отдельное
+                                 действие по требованию пользователя, см.
+                                 POST /videos/{id}/find-moments в app/main.py
+                                 (синхронный эндпоинт, а не фоновая задача —
+                                 вызов Claude API занимает секунды, не часы,
+                                 и должен быть легко повторяем, если упал
+                                 из-за отсутствующего/неверного ключа).
   render_moment_task          — рендер момента через ffmpeg.
   publish_target               — опубликовать один рендер момента на одной платформе.
   dispatch_scheduled_publishes — Celery Beat: раз в минуту проверяет отложенные публикации.
@@ -20,12 +27,11 @@ from pathlib import Path
 
 from app.celery_app import celery_app
 from app.config import (
-    WHISPER_MODEL_SIZE, WHISPER_DEVICE, DEFAULT_MOMENTS_COUNT, OUTPUTS_DIR,
+    WHISPER_MODEL_SIZE, WHISPER_DEVICE, OUTPUTS_DIR,
 )
 from app.database import SessionLocal
-from app.models import Video, Moment, Subtitle, VideoStatus, PublishTarget, PublishStatus, Platform, MomentStatus
+from app.models import Video, Moment, VideoStatus, PublishTarget, PublishStatus, Platform, MomentStatus
 from pipeline.transcribe import transcribe
-from pipeline.find_moments import find_moments, build_subtitles_for_moment
 from pipeline.render import render_moment, RenderError
 from pipeline.uniqueize import apply_uniqueization
 from app.publishers import get_publisher
@@ -54,13 +60,19 @@ def _retry_sync(fn, *args, exc_types, max_retries: int, delay_seconds: float):
 # ---------- process_video ----------
 
 def _process_video_core(video_id: str) -> None:
+    """
+    Транскрибирует видео (whisper — не требует Anthropic API) и переводит
+    его в статус READY: редактор должен открываться и быть полностью
+    рабочим на этом этапе, ДО и НЕЗАВИСИМО от поиска моментов ИИ — тот
+    может не сработать (нет ключа, сбой API) без того, чтобы это ломало
+    доступ к уже загруженному и транскрибированному видео.
+    """
     db = SessionLocal()
     try:
         video = db.query(Video).filter(Video.id == video_id).first()
         if video is None:
             return
 
-        # --- Шаг 1: транскрипция ---
         video.status = VideoStatus.TRANSCRIBING
         db.commit()
 
@@ -69,34 +81,6 @@ def _process_video_core(video_id: str) -> None:
         transcript_path = OUTPUTS_DIR / f"{video.id}_transcript.json"
         transcript_path.write_text(json.dumps(transcript, ensure_ascii=False, indent=2), encoding="utf-8")
         video.transcript_path = str(transcript_path)
-        db.commit()
-
-        # --- Шаг 2: поиск моментов ---
-        video.status = VideoStatus.FINDING_MOMENTS
-        db.commit()
-
-        moments_data = find_moments(transcript, count=DEFAULT_MOMENTS_COUNT)
-
-        for m in moments_data:
-            moment = Moment(
-                video_id=video.id,
-                start=m["start"],
-                end=m["end"],
-                reason=m.get("reason"),
-                hook_line=m.get("hook_line"),
-            )
-            db.add(moment)
-            db.flush()  # чтобы получить moment.id для субтитров
-
-            subs = build_subtitles_for_moment(transcript, m["start"], m["end"])
-            for idx, s in enumerate(subs):
-                db.add(Subtitle(
-                    moment_id=moment.id,
-                    start=s["start"],
-                    end=s["end"],
-                    text=s["text"],
-                    order_index=idx,
-                ))
 
         video.status = VideoStatus.READY
         db.commit()

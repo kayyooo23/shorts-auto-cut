@@ -10,6 +10,7 @@ API-сервер приложения.
   DELETE /moments/{id}            — удалить момент (например, если не подошёл)
 """
 
+import json
 import shutil
 import sys
 import uuid
@@ -33,7 +34,7 @@ from app.models import (
     Track, Clip, TrackType,
 )
 from app.schemas import (
-    VideoOut, VideoListItem, MomentOut, MomentUpdate, SubtitleOut, SubtitleUpdate, SubtitleCreate,
+    VideoOut, VideoListItem, MomentOut, MomentCreate, MomentUpdate, SubtitleOut, SubtitleUpdate, SubtitleCreate,
     UserCreate, UserLogin, UserOut, Token,
     SocialAccountOut, PublishTargetOut, PublishRequest,
     UploadResponse, BillingMe, PlatformUsage, CoinGrant, TierSet,
@@ -53,10 +54,11 @@ from app.email import send_password_reset_email, EmailNotConfiguredError
 from app.tasks import process_video, publish_target as publish_target_task, render_moment_task
 from app.job_runner import dispatch
 from pipeline.suggest_hashtags import suggest_hashtags
+from pipeline.find_moments import find_moments, build_subtitles_for_moment, MissingApiKeyError
 from pipeline.thumbnail import get_or_create_thumbnail, ThumbnailError
 from app import oauth
 from app import billing
-from app.config import ENVIRONMENT, RUNNER_MODE, BASE_DIR
+from app.config import ENVIRONMENT, RUNNER_MODE, BASE_DIR, DEFAULT_MOMENTS_COUNT
 
 # Печатается ПЕРВЫМ делом при старте, до всего остального — если фоновые
 # задачи (транскрипция/рендер/публикация) молча не выполняются, это
@@ -453,6 +455,74 @@ def get_video(video_id: str, db: Session = Depends(get_db), current_user: User =
 def get_video_moments(video_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     video = _get_owned_video(video_id, db, current_user)
     return video.moments
+
+
+@app.post("/videos/{video_id}/find-moments", response_model=VideoOut)
+def find_moments_endpoint(video_id: str, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """
+    Поиск моментов через Claude API — по требованию, а не автоматически
+    после транскрипции (см. app/tasks.py::_process_video_core). Редактор
+    открыт и рабочий независимо от того, вызывали этот эндпоинт вообще
+    или нет; можно звать повторно (например, после того как пользователь
+    вписал ключ в Настройках) — просто добавляет ещё моментов поверх уже
+    существующих, ничего не затирает.
+    """
+    video = _get_owned_video(video_id, db, current_user)
+
+    if not video.transcript_path:
+        raise HTTPException(
+            400,
+            f"Видео ещё не транскрибировано (статус: {video.status.value}) — "
+            "поиск моментов возможен только после транскрипции.",
+        )
+
+    # Проверяем наличие ключа ДО вызова API — чтобы вернуть понятную
+    # ошибку сразу, а не только после сетевого запроса, который заведомо
+    # обречён на 401 от Anthropic.
+    from app.config import get_anthropic_api_key
+    if not get_anthropic_api_key():
+        raise HTTPException(400, "Anthropic API ключ не задан — укажи его в Настройках, чтобы искать моменты.")
+
+    transcript = json.loads(Path(video.transcript_path).read_text(encoding="utf-8"))
+
+    try:
+        moments_data = find_moments(transcript, count=DEFAULT_MOMENTS_COUNT)
+    except MissingApiKeyError as e:
+        raise HTTPException(400, str(e))
+    except Exception as e:
+        raise HTTPException(502, f"Не удалось найти моменты: {e}")
+
+    for m in moments_data:
+        moment = Moment(video_id=video.id, start=m["start"], end=m["end"], reason=m.get("reason"), hook_line=m.get("hook_line"))
+        db.add(moment)
+        db.flush()
+
+        subs = build_subtitles_for_moment(transcript, m["start"], m["end"])
+        for idx, s in enumerate(subs):
+            db.add(Subtitle(moment_id=moment.id, start=s["start"], end=s["end"], text=s["text"], order_index=idx))
+
+    db.commit()
+    db.refresh(video)
+    return video
+
+
+@app.post("/videos/{video_id}/moments", response_model=MomentOut, status_code=201)
+def create_manual_moment(video_id: str, data: MomentCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    """Момент, вырезанный пользователем вручную, без участия ИИ — нет
+    hook_line/reason (это метаданные от find_moments), без субтитров
+    (не привязан к транскрипту ничем, кроме диапазона времени)."""
+    video = _get_owned_video(video_id, db, current_user)
+
+    if data.start < 0:
+        raise HTTPException(400, "Начало момента не может быть отрицательным")
+    if video.duration_seconds is not None and data.end > video.duration_seconds:
+        raise HTTPException(400, f"Момент выходит за пределы видео (длительность {video.duration_seconds:.1f}с)")
+
+    moment = Moment(video_id=video.id, start=data.start, end=data.end, status=MomentStatus.PENDING)
+    db.add(moment)
+    db.commit()
+    db.refresh(moment)
+    return moment
 
 
 _VIDEO_MEDIA_TYPES = {
@@ -1283,9 +1353,11 @@ if ENVIRONMENT != "production":
 def get_anthropic_key_status(current_user: User = Depends(get_current_user)):
     """Не возвращает сам ключ — только флаг, задан ли он, чтобы фронтенд
     показал "ключ сохранён" вместо пустого поля (и не выводил секрет обратно
-    на экран)."""
-    if RUNNER_MODE != "local":
-        raise HTTPException(404, "Доступно только в desktop-режиме")
+    на экран). Доступно в обоих режимах — в desktop это управляемый через
+    Настройки конфиг, в облачном это переменная окружения ANTHROPIC_API_KEY;
+    в обоих случаях кнопка "Найти моменты" в редакторе может заранее
+    предупредить пользователя, что ключ не задан, не дожидаясь неудачной
+    попытки."""
     from app.config import get_anthropic_api_key
     return {"is_set": bool(get_anthropic_api_key())}
 

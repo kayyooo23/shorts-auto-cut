@@ -40,6 +40,15 @@ export default function EditorPage() {
   const [selectedClipId, setSelectedClipId] = useState(null);
 
   const [whisperDownloading, setWhisperDownloading] = useState(false);
+  const [anthropicKeySet, setAnthropicKeySet] = useState(null); // null = ещё не знаем
+  const [findingMoments, setFindingMoments] = useState(false);
+  const [findMomentsError, setFindMomentsError] = useState(null);
+
+  useEffect(() => {
+    api.getAnthropicKeyStatus()
+      .then((s) => setAnthropicKeySet(s.is_set))
+      .catch(() => setAnthropicKeySet(null));
+  }, []);
 
   const load = useCallback(async () => {
     const data = await api.getVideo(videoId);
@@ -329,6 +338,36 @@ export default function EditorPage() {
     }
   }
 
+  async function handleFindMoments() {
+    setFindingMoments(true);
+    setFindMomentsError(null);
+    try {
+      await api.findMoments(video.id);
+      await load();
+      setAnthropicKeySet(true); // раз сработало — ключ точно есть и валиден
+    } catch (err) {
+      setFindMomentsError(err instanceof ApiError ? err.detail : 'Не удалось найти моменты');
+    } finally {
+      setFindingMoments(false);
+    }
+  }
+
+  async function handleCreateManualMoment() {
+    const start = Math.floor(previewTime);
+    const end = Math.min(duration, start + 5);
+    setBusy(true);
+    setError(null);
+    try {
+      const moment = await api.createManualMoment(video.id, start, end);
+      await load();
+      setSelectedMomentId(moment.id);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.detail : 'Не удалось создать момент');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleSaveProject() {
     setSavingProject(true);
     setError(null);
@@ -395,6 +434,29 @@ export default function EditorPage() {
         {error && <div className="form-error">{error}</div>}
       </div>
 
+      <div className="moments-toolbar" style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
+        <button className="btn btn-primary btn-sm" disabled={findingMoments} onClick={handleFindMoments}>
+          {findingMoments ? 'Ищем моменты…' : '✨ Найти интересные моменты'}
+        </button>
+        <button className="btn btn-ghost btn-sm" disabled={busy} onClick={handleCreateManualMoment}>
+          + Создать момент вручную
+        </button>
+        {anthropicKeySet === false && !findMomentsError && (
+          <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>
+            Anthropic API ключ не задан — поиск моментов не сработает, пока не укажешь его в{' '}
+            <Link to="/settings">Настройках</Link>.
+          </span>
+        )}
+        {findMomentsError && (
+          <div className="form-error" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>{findMomentsError}</span>
+            {findMomentsError.includes('API ключ не задан') && (
+              <Link to="/settings" className="btn btn-primary btn-sm">Указать ключ в Настройках</Link>
+            )}
+          </div>
+        )}
+      </div>
+
       <div className="editor-workspace">
         <div className="preview-area">
           {selectedMoment ? (
@@ -436,7 +498,16 @@ export default function EditorPage() {
               </div>
             </div>
           ) : (
-            <p style={{ color: 'var(--text-faint)' }}>Нет моментов — дождись окончания обработки видео</p>
+            <div className="frame-916">
+              <video
+                ref={videoRef}
+                key={video.id}
+                src={api.getVideoFileUrl(video.id)}
+                className="preview-video"
+                controls
+                onTimeUpdate={(e) => setPreviewTime(e.target.currentTime)}
+              />
+            </div>
           )}
         </div>
 

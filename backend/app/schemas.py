@@ -147,6 +147,21 @@ class ClipUpdate(BaseModel):
     pip_height: float | None = None
 
 
+class MomentCreate(BaseModel):
+    """Ручное создание момента без ИИ — пользователь сам задаёт границы
+    на таймлайне (см. POST /videos/{id}/moments в app/main.py)."""
+    start: float
+    end: float
+
+    @field_validator("end")
+    @classmethod
+    def end_after_start(cls, v: float, info) -> float:
+        start = info.data.get("start")
+        if start is not None and v <= start:
+            raise ValueError("Конец момента должен быть позже начала")
+        return v
+
+
 class MomentOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: str

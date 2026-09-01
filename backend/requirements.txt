@@ -14,7 +14,11 @@ cryptography==43.0.1
 alembic==1.13.3
 
 faster-whisper==1.0.3
-anthropic==0.34.2
+# 0.34.2 передаёт в httpx.Client устаревший параметр proxies — httpx>=0.28
+# (тянется транзитивно другими зависимостями) убрал его и любой реальный
+# вызов Claude API падал с "Client.__init__() got an unexpected keyword
+# argument 'proxies'". Нашёл при тестировании find-moments — обновил.
+anthropic==0.40.0
 
 # Публикация на платформы
 google-api-python-client==2.149.0

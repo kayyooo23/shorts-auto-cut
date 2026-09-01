@@ -216,6 +216,12 @@ export const api = {
   async getVideoMoments(id) {
     return request(`/videos/${id}/moments`);
   },
+  async findMoments(videoId) {
+    return request(`/videos/${videoId}/find-moments`, { method: 'POST' });
+  },
+  async createManualMoment(videoId, start, end) {
+    return request(`/videos/${videoId}/moments`, { method: 'POST', body: { start, end } });
+  },
 
   // ---------- Моменты и субтитры ----------
   async updateMoment(id, patch) {
