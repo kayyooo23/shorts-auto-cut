@@ -11,6 +11,7 @@ API-сервер приложения.
 """
 
 import shutil
+import sys
 import uuid
 from datetime import datetime
 from pathlib import Path
@@ -56,6 +57,13 @@ from pipeline.thumbnail import get_or_create_thumbnail, ThumbnailError
 from app import oauth
 from app import billing
 from app.config import ENVIRONMENT, RUNNER_MODE, BASE_DIR
+
+# Печатается ПЕРВЫМ делом при старте, до всего остального — если фоновые
+# задачи (транскрипция/рендер/публикация) молча не выполняются, это
+# первое, что нужно посмотреть в логах процесса: RUNNER_MODE="celery" без
+# реального Redis/Celery worker'а выглядит для пользователя как вечное
+# "в очереди" без единой ошибки (см. app/job_runner.py::dispatch).
+print(f"[main] RUNNER_MODE={RUNNER_MODE}", file=sys.stderr)
 
 # Останавливаем запуск, если конфигурация небезопасна для прода
 # (дефолтный SECRET_KEY, открытый CORS, SQLite и т.п.)

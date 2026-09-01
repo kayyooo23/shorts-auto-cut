@@ -46,11 +46,26 @@ def dispatch(task, *args) -> None:
     В режиме "celery" вызывает task.delay(*args) как обычно.
     В режиме "local" ищет зарегистрированную реализацию по task.name и
     запускает её в фоновом потоке немедленно, без Redis.
+
+    RUNNER_MODE уже валидируется при загрузке app/config.py (там же
+    выбирается дефолт с учётом sys.frozen — desktop-сборка не зависит от
+    того, долетела ли переменная окружения). Проверка здесь — намеренная
+    вторая линия защиты: если RUNNER_MODE всё же оказался не "local" и не
+    "celery" (например, кто-то подменил его через monkeypatch мимо
+    config.py), лучше упасть здесь явно и сразу, чем молча уйти в
+    несуществующий Celery-брокер — тогда видео просто зависло бы в
+    статусе "в очереди" НАВСЕГДА, без единой ошибки и без нагрузки на
+    CPU/сеть (задача физически никогда не запускалась).
     """
     if RUNNER_MODE == "local":
         _dispatch_local(task.name, *args)
-    else:
+    elif RUNNER_MODE == "celery":
         task.delay(*args)
+    else:
+        raise RuntimeError(
+            f"Некорректный RUNNER_MODE={RUNNER_MODE!r} в job_runner.dispatch() — "
+            "допустимы только 'local' или 'celery'. Задача НЕ поставлена в очередь."
+        )
 
 
 def _dispatch_local(task_name: str, *args) -> None:

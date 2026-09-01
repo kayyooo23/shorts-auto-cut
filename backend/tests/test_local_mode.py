@@ -183,3 +183,19 @@ def test_upload_marks_video_failed_if_dispatch_raises_synchronously(client, regi
 
     r2 = client.get(f"/videos/{body['id']}", headers=headers)
     assert r2.json()["status"] == "failed"
+
+
+def test_dispatch_raises_immediately_on_invalid_runner_mode(monkeypatch):
+    """
+    Если RUNNER_MODE не "local" и не "celery" (опечатка, будущая ошибка
+    конфигурации) — dispatch() должен явно упасть сразу же, а не молча
+    попытаться уйти в несуществующий Celery-брокер. Тихий уход в никуда —
+    именно то, из-за чего видео зависало в статусе "в очереди" навсегда:
+    без ошибки и без единой попытки её показать пользователю.
+    """
+    import app.job_runner as job_runner_module
+
+    monkeypatch.setattr(job_runner_module, "RUNNER_MODE", "definitely-not-a-real-mode")
+
+    with pytest.raises(RuntimeError, match="Некорректный RUNNER_MODE"):
+        job_runner_module.dispatch(object())

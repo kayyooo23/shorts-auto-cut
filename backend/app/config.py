@@ -11,7 +11,34 @@ from pathlib import Path
 # Режим выполнения фоновых задач — определяется здесь же (а не ниже, как
 # раньше), потому что от него зависят пути к БД/хранилищу и источник
 # секретов ниже. См. подробное описание режимов у переменной RUNNER_MODE.
-RUNNER_MODE = os.getenv("RUNNER_MODE", "celery")
+#
+# ВАЖНО: дефолт зависит от того, запущены ли мы как PyInstaller-сборка
+# (sys.frozen), а НЕ жёстко "celery". Раньше десктоп-сборка полагалась на
+# то, что desktop_main.py успеет выставить os.environ["RUNNER_MODE"]="local"
+# до этого импорта — это работает надёжно (не зависит от .env-файлов,
+# которые PyInstaller не бандлит и не подхватывает: значение прибито
+# прямо в скомпилированный код desktop_main.py), но если процесс
+# запущен как .exe КАКИМ-ТО ДРУГИМ способом в обход desktop_main.py, или
+# нужна дополнительная страховка на будущее — sys.frozen сам по себе уже
+# однозначно говорит "это desktop-сборка", независимо от переменных
+# окружения и от того, как именно Tauri/что-либо ещё запустило процесс.
+_env_runner_mode = os.getenv("RUNNER_MODE")
+if _env_runner_mode:
+    RUNNER_MODE = _env_runner_mode
+elif getattr(sys, "frozen", False):
+    RUNNER_MODE = "local"
+else:
+    RUNNER_MODE = "celery"
+
+if RUNNER_MODE not in ("local", "celery"):
+    raise RuntimeError(
+        f"Некорректный RUNNER_MODE={RUNNER_MODE!r} — допустимы только 'local' или 'celery'. "
+        "Проверь переменную окружения RUNNER_MODE (опечатка?) — с неверным значением "
+        "фоновые задачи (транскрипция, рендер, публикация) не будут выполняться вообще, "
+        "а видео будет бесконечно висеть в статусе 'в очереди' без единой ошибки."
+    )
+
+print(f"[config] RUNNER_MODE={RUNNER_MODE} (frozen={getattr(sys, 'frozen', False)})", file=sys.stderr)
 
 # BASE_DIR — директория с РЕСУРСАМИ приложения (alembic/, ffmpeg рядом с
 # .exe): при обычном запуске из исходников это папка backend/ в репозитории,
