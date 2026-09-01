@@ -7,18 +7,51 @@ import os
 import sys
 from pathlib import Path
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+# Режим выполнения фоновых задач — определяется здесь же (а не ниже, как
+# раньше), потому что от него зависят пути к БД/хранилищу и источник
+# секретов ниже. См. подробное описание режимов у переменной RUNNER_MODE.
+RUNNER_MODE = os.getenv("RUNNER_MODE", "celery")
 
-# База данных (по умолчанию SQLite для локальной разработки;
-# на проде лучше Postgres — см. README)
-DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{BASE_DIR}/storage/app.db")
+# BASE_DIR — директория с РЕСУРСАМИ приложения (alembic/, ffmpeg рядом с
+# .exe): при обычном запуске из исходников это папка backend/ в репозитории,
+# при запуске из PyInstaller-сборки (RUNNER_MODE=local) — папка, где лежит
+# сам .exe. Это НЕ путь для пользовательских данных (БД/загрузки/секреты) —
+# та не должна зависеть от того, куда установлен .exe (Program Files и т.п.
+# может быть недоступен для записи), см. DATA_DIR ниже.
+if RUNNER_MODE == "local":
+    from app.local_config import (
+        get_data_dir,
+        get_bundled_resource_dir,
+        get_external_resource_dir,
+        get_or_create_local_secrets,
+        get_anthropic_api_key as _get_anthropic_api_key,
+    )
 
-# Redis — брокер для Celery (очередь фоновых задач)
+    BASE_DIR = get_bundled_resource_dir()
+    EXTERNAL_RESOURCE_DIR = get_external_resource_dir()
+    DATA_DIR = get_data_dir()
+    _local_secrets = get_or_create_local_secrets()
+else:
+    BASE_DIR = Path(__file__).resolve().parent.parent
+    EXTERNAL_RESOURCE_DIR = BASE_DIR
+    DATA_DIR = BASE_DIR
+    _local_secrets = {}
+
+# База данных (по умолчанию SQLite; в desktop-режиме — в app-data
+# директории пользователя, не рядом с .exe и не в CWD процесса — см.
+# DATA_DIR выше. На проде облачного SaaS лучше Postgres — см. README)
+DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{(DATA_DIR / 'storage' / 'app.db').as_posix()}")
+
+# Redis — брокер для Celery (очередь фоновых задач). Не используется в
+# desktop-режиме (RUNNER_MODE=local).
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/0")
 CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "redis://localhost:6379/1")
 
-# Anthropic API — для поиска интересных моментов
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+# Anthropic API — для поиска интересных моментов и подбора хештегов.
+# В desktop-режиме пользователь вводит ключ через экран настроек фронтенда
+# (см. /settings/anthropic-key в app/main.py) — он сохраняется в тот же
+# локальный конфиг, что и секреты выше, а не в переменные окружения.
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY") or (_get_anthropic_api_key() if RUNNER_MODE == "local" else "") or ""
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6")
 
 # Whisper
@@ -26,8 +59,8 @@ WHISPER_MODEL_SIZE = os.getenv("WHISPER_MODEL_SIZE", "medium")
 WHISPER_DEVICE = os.getenv("WHISPER_DEVICE", "cpu")  # "cuda" если есть GPU
 
 # Куда сохраняются загруженные видео и результаты нарезки
-UPLOADS_DIR = BASE_DIR / "storage" / "uploads"
-OUTPUTS_DIR = BASE_DIR / "storage" / "outputs"
+UPLOADS_DIR = DATA_DIR / "storage" / "uploads"
+OUTPUTS_DIR = DATA_DIR / "storage" / "outputs"
 UPLOADS_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUTS_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -37,8 +70,10 @@ DEFAULT_MOMENTS_COUNT = int(os.getenv("DEFAULT_MOMENTS_COUNT", "6"))
 # Авторизация (JWT)
 # ВАЖНО: на проде SECRET_KEY обязательно переопредели через переменную
 # окружения — приложение откажется стартовать в проде с дефолтным ключом
-# (см. проверку в main.py).
-SECRET_KEY = os.getenv("SECRET_KEY", "dev-only-insecure-secret-change-me")
+# (см. проверку в main.py). В desktop-режиме (RUNNER_MODE=local) ключ
+# генерируется один раз при первом запуске и хранится в локальном
+# конфиге — см. app/local_config.py.
+SECRET_KEY = os.getenv("SECRET_KEY") or _local_secrets.get("secret_key") or "dev-only-insecure-secret-change-me"
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "60"))  # 1 час
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", "30"))
@@ -87,17 +122,15 @@ INSTAGRAM_APP_SECRET = os.getenv("INSTAGRAM_APP_SECRET", "")
 # которому нужна публичная прямая ссылка на видео (см. publishers/instagram.py)
 PUBLIC_STORAGE_BASE_URL = os.getenv("PUBLIC_STORAGE_BASE_URL", "")
 
-# Режим выполнения фоновых задач:
-# - "celery" (по умолчанию) — задачи реально уходят через Redis-брокер на
-#   отдельный воркер-процесс. Нужен для облачного SaaS с несколькими
-#   пользователями одновременно — это масштабируется, desktop-режим ниже нет.
-# - "local" — задачи выполняются в пуле потоков внутри ТОГО ЖЕ процесса,
-#   без Redis/Celery/Docker вообще. Используется в desktop-версии
-#   (Tauri-приложение на компьютере одного пользователя), где поднимать
-#   отдельный брокер сообщений было бы избыточно и требовало бы Docker.
+# (RUNNER_MODE читается в самом верху файла — от него зависят пути к
+# БД/хранилищу и источник секретов, см. комментарий там же. Здесь только
+# описание режимов для справки:
+#   "celery" (по умолчанию) — задачи уходят через Redis-брокер на отдельный
+#     воркер-процесс; нужен для облачного SaaS с несколькими пользователями.
+#   "local" — задачи выполняются в пуле потоков внутри того же процесса,
+#     без Redis/Celery/Docker; используется в desktop-версии (Tauri).
 # См. app/job_runner.py — единая точка dispatch(), которая прячет разницу
-# от остального кода (app/main.py не знает, какой режим активен).
-RUNNER_MODE = os.getenv("RUNNER_MODE", "celery")
+# от остального кода (app/main.py не знает, какой режим активен).)
 
 # Какие платформы реально доступны для подключения прямо сейчас.
 # YouTube работает "из коробки" сразу после получения ключей. TikTok до
@@ -157,7 +190,9 @@ PAYMENT_WEBHOOK_SECRET = os.getenv("PAYMENT_WEBHOOK_SECRET", "")
 # ОТДЕЛЬНЫЙ от SECRET_KEY — компрометация одного не должна автоматически
 # компрометировать другой. Сгенерировать:
 #   python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
-TOKEN_ENCRYPTION_KEY = os.getenv("TOKEN_ENCRYPTION_KEY", "")
+# В desktop-режиме — как и SECRET_KEY, генерируется один раз и хранится
+# в локальном конфиге (app/local_config.py), а не в переменной окружения.
+TOKEN_ENCRYPTION_KEY = os.getenv("TOKEN_ENCRYPTION_KEY") or _local_secrets.get("token_encryption_key") or ""
 
 if not TOKEN_ENCRYPTION_KEY and ENVIRONMENT != "production":
     # Удобство для локальной разработки: ключ генерируется на старте процесса.

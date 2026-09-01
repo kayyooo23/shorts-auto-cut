@@ -6,6 +6,9 @@ venv/
 *.db
 backend/.env
 
+# PyInstaller (сборка desktop .exe — см. backend/shorts-backend.spec)
+backend/build/
+
 # storage — keep folders, ignore contents
 backend/storage/uploads/*
 backend/storage/outputs/*
