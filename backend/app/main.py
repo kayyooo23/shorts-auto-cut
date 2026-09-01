@@ -24,7 +24,7 @@ from slowapi.errors import RateLimitExceeded
 from sqlalchemy.orm import Session
 
 from app.config import UPLOADS_DIR, CORS_ORIGINS, LOGIN_RATE_LIMIT, REGISTER_RATE_LIMIT, assert_production_safe, FRONTEND_BASE_URL, FORGOT_PASSWORD_RATE_LIMIT
-from app.database import get_db
+from app.database import get_db, SessionLocal
 from app.models import (
     Video, Moment, Subtitle, VideoStatus, User,
     SocialAccount, PublishTarget, Platform, PublishStatus, MomentStatus,
@@ -87,6 +87,42 @@ else:
     # приложения могли бы гонять миграцию параллельно друг с другом.
     # См. README, раздел "Миграции базы данных (Alembic)".
     pass
+
+
+def _bootstrap_admin_account() -> None:
+    """
+    Единственный способ завести админ-аккаунт — задать ADMIN_EMAIL и
+    ADMIN_PASSWORD в окружении (см. .env.example), НЕ публичная форма
+    регистрации. Идемпотентно, безопасно гонять при каждом старте:
+      - пользователя с таким email нет — создаёт его с is_admin=True;
+      - уже есть — просто гарантирует is_admin=True (на случай, если
+        переменные добавили ПОСЛЕ того, как аккаунт уже существовал,
+        например обычной регистрацией на тот же email).
+    """
+    from app.config import ADMIN_EMAIL, ADMIN_PASSWORD
+
+    if not ADMIN_EMAIL or not ADMIN_PASSWORD:
+        return
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.email == ADMIN_EMAIL).first()
+        if user is None:
+            user = User(
+                email=ADMIN_EMAIL,
+                hashed_password=hash_password(ADMIN_PASSWORD),
+                is_admin=True,
+            )
+            db.add(user)
+            db.commit()
+        elif not user.is_admin:
+            user.is_admin = True
+            db.commit()
+    finally:
+        db.close()
+
+
+_bootstrap_admin_account()
 
 app = FastAPI(title="Shorts Auto-Cut API")
 

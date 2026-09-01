@@ -12,11 +12,20 @@ import AccountsPage from './pages/AccountsPage';
 import BillingPage from './pages/BillingPage';
 import ProfilePage from './pages/ProfilePage';
 import SettingsPage from './pages/SettingsPage';
+import AdminPage from './pages/AdminPage';
 
 function RequireAuth({ children }) {
   const { user, loading } = useAuth();
   if (loading) return <div style={{ padding: 32, color: 'var(--text-soft)' }}>Загружаем…</div>;
   if (!user) return <Navigate to="/login" replace />;
+  return children;
+}
+
+function RequireAdmin({ children }) {
+  const { user, loading } = useAuth();
+  if (loading) return <div style={{ padding: 32, color: 'var(--text-soft)' }}>Загружаем…</div>;
+  if (!user) return <Navigate to="/login" replace />;
+  if (!user.is_admin) return <Navigate to="/videos" replace />;
   return children;
 }
 
@@ -45,6 +54,14 @@ export default function App() {
             <Route path="/billing" element={<BillingPage />} />
             <Route path="/profile" element={<ProfilePage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route
+              path="/admin"
+              element={
+                <RequireAdmin>
+                  <AdminPage />
+                </RequireAdmin>
+              }
+            />
           </Route>
 
           <Route path="*" element={<Navigate to="/videos" replace />} />

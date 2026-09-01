@@ -131,6 +131,13 @@ CORS_ORIGINS = os.getenv("CORS_ORIGINS", "*").split(",")
 # "production" / "development" — переключает строгие проверки безопасности
 ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 
+# Bootstrap единственного админ-аккаунта (см. main.py::_bootstrap_admin_account) —
+# публичной формы регистрации для админа нет намеренно. Заданы — при
+# каждом старте гарантируется, что пользователь с этим email существует
+# и имеет is_admin=True. Не заданы — bootstrap ничего не делает.
+ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
+
 # Лимиты на попытки логина/регистрации (защита от брутфорса и спам-регистрации)
 LOGIN_RATE_LIMIT = os.getenv("LOGIN_RATE_LIMIT", "5/minute")
 REGISTER_RATE_LIMIT = os.getenv("REGISTER_RATE_LIMIT", "3/minute")

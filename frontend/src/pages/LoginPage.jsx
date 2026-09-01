@@ -16,8 +16,8 @@ export default function LoginPage() {
     setError(null);
     setLoading(true);
     try {
-      await login(email, password);
-      navigate('/videos');
+      const loggedInUser = await login(email, password);
+      navigate(loggedInUser?.is_admin ? '/admin' : '/videos');
     } catch (err) {
       setError(err instanceof ApiError ? err.detail : 'Не удалось войти');
     } finally {

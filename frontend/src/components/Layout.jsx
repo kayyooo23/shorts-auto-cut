@@ -1,5 +1,6 @@
 import { NavLink, Outlet } from 'react-router-dom';
 import ProfileMenu from './ProfileMenu';
+import { useAuth } from '../context/AuthContext';
 
 const NAV_ITEMS = [
   { to: '/videos', label: 'Мои видео', icon: '▤' },
@@ -11,6 +12,11 @@ const NAV_ITEMS = [
 ];
 
 export default function Layout({ breadcrumb }) {
+  const { user } = useAuth();
+  const navItems = user?.is_admin
+    ? [...NAV_ITEMS, { to: '/admin', label: 'Админка', icon: '★' }]
+    : NAV_ITEMS;
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div className="topbar">
@@ -23,7 +29,7 @@ export default function Layout({ breadcrumb }) {
 
       <div className="shell">
         <nav className="nav">
-          {NAV_ITEMS.map((item) => (
+          {navItems.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}

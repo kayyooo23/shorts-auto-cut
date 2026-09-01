@@ -11,13 +11,15 @@ export function AuthProvider({ children }) {
     if (!api.isLoggedIn()) {
       setUser(null);
       setLoading(false);
-      return;
+      return null;
     }
     try {
       const me = await api.me();
       setUser(me);
+      return me;
     } catch {
       setUser(null);
+      return null;
     } finally {
       setLoading(false);
     }
@@ -32,7 +34,7 @@ export function AuthProvider({ children }) {
 
   const login = async (email, password) => {
     await api.login(email, password);
-    await loadUser();
+    return loadUser();
   };
 
   const register = async (email, password) => {
