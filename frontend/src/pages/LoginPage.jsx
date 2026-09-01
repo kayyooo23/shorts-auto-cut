@@ -47,12 +47,13 @@ export default function LoginPage() {
           onChange={(e) => setPassword(e.target.value)}
         />
 
-        <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 16, fontSize: 13, color: 'var(--text-soft)', cursor: 'pointer' }}>
+        <label style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', marginTop: 16, fontSize: 13, color: 'var(--text-soft)', cursor: 'pointer', whiteSpace: 'nowrap' }}>
+          <span>Запомнить меня</span>
           <input
             type="checkbox" checked={remember}
             onChange={(e) => setRemember(e.target.checked)}
+            style={{ width: 'auto', flexShrink: 0 }}
           />
-          Запомнить меня
         </label>
 
         {error && <div className="form-error">{error}</div>}

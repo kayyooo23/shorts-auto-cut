@@ -162,8 +162,34 @@ ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
 # публичной формы регистрации для админа нет намеренно. Заданы — при
 # каждом старте гарантируется, что пользователь с этим email существует
 # и имеет is_admin=True. Не заданы — bootstrap ничего не делает.
-ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
+#
+# В desktop-режиме (RUNNER_MODE=local) переменные окружения ненадёжны —
+# та же причина, что и с RUNNER_MODE выше: Tauri запускает backend как
+# sidecar-процесс, и нет гарантии, что заданное в системе окружение до
+# него долетит. Поэтому здесь зашит дефолт admin@example.com/AdminPass123!,
+# который применяется, только если ADMIN_EMAIL/ADMIN_PASSWORD не заданы
+# явно через окружение — переопределить их (например, для собственной
+# сборки) по-прежнему можно.
+#
+# КРИТИЧНО ДЛЯ БУДУЩЕГО: этот дефолт допустим ТОЛЬКО для desktop-версии,
+# где "админ" — тот же человек, что запустил .exe на своей машине, никакого
+# реального разграничения полномочий тут нет. Если backend когда-либо
+# станет облачным SaaS с реальными клиентами (RUNNER_MODE=celery) —
+# фиксированный пароль здесь НЕДОПУСТИМ ни при каких условиях: там
+# ADMIN_EMAIL/ADMIN_PASSWORD обязаны оставаться настоящими переменными
+# окружения, которые оператор задаёт при деплое. Именно поэтому дефолт
+# ниже применяется строго под условием RUNNER_MODE == "local" — при
+# RUNNER_MODE=celery без явно заданных переменных бутстрап админа просто
+# тихо пропускается (см. main.py), а не тоже цепляет этот дефолт.
+_DESKTOP_DEFAULT_ADMIN_EMAIL = "admin@example.com"
+_DESKTOP_DEFAULT_ADMIN_PASSWORD = "AdminPass123!"
+
+if RUNNER_MODE == "local":
+    ADMIN_EMAIL = os.getenv("ADMIN_EMAIL") or _DESKTOP_DEFAULT_ADMIN_EMAIL
+    ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD") or _DESKTOP_DEFAULT_ADMIN_PASSWORD
+else:
+    ADMIN_EMAIL = os.getenv("ADMIN_EMAIL", "")
+    ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
 
 # Лимиты на попытки логина/регистрации (защита от брутфорса и спам-регистрации)
 LOGIN_RATE_LIMIT = os.getenv("LOGIN_RATE_LIMIT", "5/minute")
